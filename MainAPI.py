@@ -18,40 +18,58 @@ from tweepy import API
 from tweepy import Cursor
 from tweepy.streaming import StreamListener
 from tweepy import OAuthHandler
-from tweepy import Stream
+
+#%%
+import sys
+sys.path.append('../')
+for p in sys.path:
+    print(p)
 
 
+#%%
+import time 
 import numpy 
 import pandas  
+import utils_dnp
 
-import utils_do_not_post as ut  #This protects keys from viewing when sharing this code
+
+import importlib
+importlib.reload(utils_dnp)
+ 
+  
+#This protects keys from viewing when sharing this code
 # utils_do_not_post contains the following four variables:
 # API key CONSUMER_KEY  
 # API secret  CONSUMER_SECRET  
 # Access token ACCESS_TOKEN  
 # Access token secret  ACCESS_TOKEN_SECRET  
 
+
+print(utils_dnp.CONSUMER_KEY) #Erase this line later: used for checking whether utils_dnp has been reloaded
+
 #%% Create Classes  
 
-class TwitAuthenticator():
+class TwitAuthenticator(): 
     """
-    Authentication
+    Authentication, gets called inside TwitClient class
     """
     def authenticate_twitter_app(self):
         #Connect on OAuth process, using the keys and tokens:
-        auth = tweepy.OAuthHandler(ut.CONSUMER_KEY, ut.CONSUMER_SECRET) 
-        auth.set_access_token(ut.ACCESS_TOKEN, ut.ACCESS_TOKEN_SECRET)
+        auth = tweepy.OAuthHandler(utils_dnp.CONSUMER_KEY, utils_dnp.CONSUMER_SECRET) 
+        auth.set_access_token(utils_dnp.ACCESS_TOKEN, utils_dnp.ACCESS_TOKEN_SECRET)
         return auth
 
 class TwitClient():
     """
-    Construct a client class...this is the one that gets the friends list :)
+    Construct a client. Get authorization from Twitter API. 
+    And gets the friends list of the given twitter_user (not necessarily the same as the authorizing account!)
     """
     #Construct a Client 
     def __init__(self,twitter_user=None):
         self.auth = TwitAuthenticator().authenticate_twitter_app()
         self.twitter_client = API(self.auth)
         self.twitter_user = twitter_user
+        print(self.twitter_user) #for debugging purposes erase later
         
     def get_twitter_client_api(self):
         return self.twitter_client
@@ -68,42 +86,59 @@ class TwitClient():
             return False
         print(status)
 
+
 class FriendAnalyzer():
     """
     Listing and categorizing friends list
     """
     def friends_to_data_frame(self, friend_list):
-        df = pandas.DataFrame(data=[friend.id for friend in friend_list], columns=['Friends ID'])
+        df = pandas.DataFrame(data=[friend.id for friend in friend_list], columns=['Friend_ID'])
 
         df['Name'] = numpy.array([friend.name for friend in friend_list])
-        #df['id'] = numpy.array([friend.id for friend in friend_list])
+        df['User_name'] = numpy.array([friend.screen_name for friend in friend_list]) #broke after I added this line
         df['Friends_count'] = numpy.array([friend.friends_count for friend in friend_list])
 
         return df
+    
+    def count_ships(self):
+        pass
     
 #%% Main part of the program
 
 if __name__ == "__main__":
     
+    #Get List of 'Friends'    
     twitter_client = TwitClient()
     friend_analyzer = FriendAnalyzer()
 
     api = twitter_client.get_twitter_client_api()
     friendList = twitter_client.get_friend_list()
     
-    #print(dir(friendList[0]))    
+    #print(dir(friendList[0]))    #for finding attributes of object friendList (which is a list of built-in "friend" objects)
     
-    df = friend_analyzer.friends_to_data_frame(friendList)
-    print(df.head(10))
-
-
-     
+    MyFriends = friend_analyzer.friends_to_data_frame(friendList)
+    print(MyFriends.head(12))
+    #print(MyFriends.User_name[0])
     
-       
-   
+    #%%
+ 
+    #Get list of 'Friends' of 'Friends'  MyFriends.Name[0]
+    #twitter_client = TwitClient(twitter_user=MyFriends.User_name[0]) #works with twitter_user="SportIsAllOver"
+    vvv = "TheDickCavett"
+    print(vvv)
+    print(MyFriends.User_name[4])
+    
+    #%%
+    twitter_client = TwitClient(twitter_user=MyFriends.User_name[4])
+    #%%
+    friend_analyzer = FriendAnalyzer()
+    #%%
+    friendList2 = twitter_client.get_friend_list()
+    #%%
+    TheirFriends = friend_analyzer.friends_to_data_frame(friendList2)
+    print(TheirFriends.head(10))
 
 
-#%%
 
 
 
