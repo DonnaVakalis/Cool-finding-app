@@ -1,0 +1,206 @@
+---
+title: Social Network Analysis to Find Variance among Friends
+author: "Donna V., forked from Repo by Shirin Glander https://github.com/DonnaVakalis/blog_posts_prep/blob/master/twitter/twitter_codecentric.Rmd"
+date: "December 2018"
+output:
+  prettydoc::html_pretty:
+    highlight: github
+    theme: cayman
+
+---
+ 
+
+```{r }
+#=== Load libraries ====
+library(twitteR)
+library(tidyverse)
+library(tidytext)
+library(igraph)
+library(ggraph)
+```
+
+```{r}
+# Authentication tokens
+
+consumerKey = "PUT YOURS HERE"
+consumerSecret = "PUT YOURS HERE"
+accessToken = "PUT YOURS HERE"
+accessSecret = "PUT YOURS HERE"
+```
+
+
+```{r }
+# Contact Twitter API
+options(httr_oauth_cache = TRUE)
+setup_twitter_oauth(consumer_key = consumerKey, 
+                    consumer_secret = consumerSecret, 
+                    access_token = accessToken, 
+                    access_secret = accessSecret)
+```
+
+
+```{r}
+# Initial Setup, Get "First Degree" Friends
+
+handle <- winDialogString("What is your twitter handle? ",
+                            default="@")
+user <- getUser(handle)
+
+friends <- user$getFriends() # who I follow
+if (length(friends) !=0) {  
+    friends_df <- twListToDF(friends) %>%
+      rownames_to_column() %>%
+      select(name,screenName,location,lang,id)
+     # next time add: friendsCount so that can take a ratio of duplications/total friends!!
+}
+```
+
+```{r}
+ # For each 1st degree friend, get friends: "Second Degree" Friends 
+
+for (i in 123:length(friends)) {
+   tryCatch({
+     
+      friends2 <- friends[[i]]$getFriends() # my friends' friends
+      if (length(friends2)!=0) { # only go through next steps if not friends2 is not empty
+          friends2_df <- twListToDF(friends2) %>%
+            rownames_to_column() %>%
+            select(name,screenName,location,lang,id) %>%
+            # next time add: friendsCount so that can take a ratio of duplications/total friends!!
+            mutate(friend = as.character(friends[[i]]$id))
+  
+          if (i == 1) {
+          friends2_df_final <- friends2_df
+          } else {
+            friends2_df_final <- rbind(friends2_df_final, friends2_df)
+          }
+      }
+      print(i)
+      if (i%%13 == 0) Sys.sleep(900) #pause for 900 seconds every 13 otherwise Rate Limit will be exceeded
+      
+   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+```
+
+
+
+```{r}
+# Skip this
+
+
+```
+
+```{r }
+
+# GRAPH AND BETWEENESS OF ALL
+
+# Define Edge Table to Draw Graphs
+# add screennames of "friend" to right side of friends2_df_final
+friends2_df_final <- friends2_df_final %>%
+  left_join(select(friends_df, screenName, id), by = c("friend" = "id")) %>%
+  rename(friendName=screenName.y)
+
+edge_table_1 <- data.frame(source = rep(user$screenName, nrow(friends_df)),
+                         target = friends_df$screenName)
+
+edge_table_2 <- data.frame(source = friends2_df_final$friendName,
+                         target = friends2_df_final$screenName)
+
+edge_table <- rbind(edge_table_1, edge_table_2)
+
+graph <- graph_from_data_frame(edge_table, directed = TRUE)
+layout <- layout_with_fr(graph)
+V(graph)$color <- ifelse(V(graph)$name == user$screenName, "#377F97", "#4A9888")
+V(graph)$size <- ifelse(V(graph)$name == user$screenName, 6, 1)
+V(graph)$label <- ifelse(V(graph)$name == user$screenName, user$screenName, NA)
+
+betweenness <- igraph::betweenness(graph, directed = TRUE)
+#betweenness[order(betweenness, decreasing = TRUE)]
+edge_betweenness <- igraph::edge_betweenness(graph, directed = TRUE)
+V(graph)$size <- ifelse(V(graph)$name == user$screenName, 10, betweenness * 0.000001)
+```
+
+```{r }
+# GRAPH AND BETWEENESS ONLY OF AT LEAST ONE INTER-CONNECTION
+
+# if a target being followed by my friends appears in either: 
+# my friends, or target of my friends 
+# then keep, 
+# otherwise delete that row
+
+#///
+
+# For every username that appears in edge_table_2$target (i.e., my friend follows this node) AND
+# AND appears in EITHER:
+#                       1. edge_table_1$target (i.e., is another one of my friends) OR
+#                       2. edge_table_2$target from a different source (i.e., is also followed my another one of my friends)
+# then give a column with 'degree of connetion' 1 or 2   
+# otherwise, degree 0
+
+# DISCARD the row in which edge_table_2$target appears with degree 0
+
+ 
+
+
+```
+
+
+```{r}
+
+# GRAPHICS 
+
+pdf("twitter_net.pdf", width = 70, height = 80)
+plot(graph,
+     layout = layout,
+     vertex.label = V(graph)$label,
+     vertex.color = scales::alpha(V(graph)$color, alpha = 0.5), 
+     vertex.size = V(graph)$size , 
+     vertex.frame.color = "gray", 
+     vertex.label.color = "black", 
+     vertex.label.cex = 10,
+     edge.arrow.size = 1)
+dev.off()
+
+pdf("twitter_net_betweenness.pdf", width = 70, height = 80)
+plot(graph,
+     layout = layout,
+     vertex.label = V(graph)$label,
+     vertex.color = scales::alpha(V(graph)$color, alpha = 0.5), 
+     vertex.size = V(graph)$size, 
+     vertex.frame.color = "gray", 
+     vertex.label.color = "black", 
+     vertex.label.cex = 6,
+     edge.width = edge_betweenness * 0.0000001,
+     edge.arrow.size = 1)
+dev.off()
+```
+
+
+
+```{r}
+#  TINKERING
+
+save.image('myworkspace.RData')
+save(friends2_df_final, file = "friends2_df_1to122.RData")
+
+# If want to Clean out empty lists 
+# (not sure if due to error in scraping)
+
+# find error_id such that match in the second degree set is absent
+typeof(friends_df[122,]$id)
+
+error.list <- vector(mode="character", length=0)
+for (j in 122:124) { 
+    error_id<-friends_df[123,]$id 
+    
+    match.exists <-friends2_df_final %>%
+      filter(friend==error_id)
+    
+    if(length(match.exists)==0){   
+      error.list <- c(error.list,error_id)
+    }
+}
+
+
+```
+
